@@ -694,6 +694,14 @@ GEN_REMOVE_HOOK1(new_thread)
 #error Unhandled TARGET_LONG_BITS value
 #endif
 
+#ifdef ASAN_COMPACT
+# define ALLOC_ALIGN_POW (7UL)
+#else
+# define ALLOC_ALIGN_POW (3UL)
+#endif
+
+#define ALLOC_ALIGN_SIZE (1UL << ALLOC_ALIGN_POW)
+
 void libafl_tcg_gen_asan(TCGTemp * addr, size_t size)
 {
     if (size == 0)
@@ -707,10 +715,10 @@ void libafl_tcg_gen_asan(TCGTemp * addr, size_t size)
     TCGv test_addr = tcg_temp_new();
     TCGv_ptr test_ptr = tcg_temp_new_ptr();    
 
-    tcg_gen_andi_tl(k, addr_val, 7);
+    tcg_gen_andi_tl(k, addr_val, ALLOC_ALIGN_SIZE - 1);
     tcg_gen_addi_tl(k, k, size - 1);
 
-    tcg_gen_shri_tl(shadow_addr, addr_val, 3);
+    tcg_gen_shri_tl(shadow_addr, addr_val, ALLOC_ALIGN_POW);
     tcg_gen_addi_tl(shadow_addr, shadow_addr, SHADOW_BASE);
     tcg_gen_tl_ptr(shadow_ptr, shadow_addr);
     tcg_gen_ld8s_tl(shadow_val, shadow_ptr, 0);
@@ -731,7 +739,7 @@ void libafl_tcg_gen_asan(TCGTemp * addr, size_t size)
         shadow_val, tcg_constant_tl(0),
         shadow_addr, tcg_constant_tl(0));
 
-    if (size < 8)
+    if (size < ALLOC_ALIGN_SIZE)
     {
         tcg_gen_movcond_tl(TCG_COND_GE, test_addr,
             k, shadow_val,
